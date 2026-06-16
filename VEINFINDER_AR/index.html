@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Vein Finder — VF-2400</title>
+
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: 'Space Grotesk', Arial, sans-serif;
+    }
+
+    /* ── A-Frame scene fills the whole screen ── */
+    a-scene {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+    }
+
+    /* ══════════════════════════════════════════
+       TOP HUD
+    ══════════════════════════════════════════ */
+    .hud-top {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 18px 20px 0;
+      pointer-events: none;
+    }
+
+    .hud-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: #00D4C8;
+      letter-spacing: 0.12em;
+      line-height: 1.7;
+      opacity: 0.85;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #00D4C8;
+      margin-right: 6px;
+      vertical-align: middle;
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.25; }
+    }
+
+    .mode-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: rgba(232, 244, 248, 0.45);
+      letter-spacing: 0.1em;
+      text-align: right;
+      transition: color 0.3s, opacity 0.3s;
+    }
+
+    .mode-label.active {
+      color: #00D4C8;
+      opacity: 1;
+    }
+
+    /* ── Zoom HUD (bottom-right corner) ── */
+    .zoom-hud {
+      position: fixed;
+      bottom: 148px;
+      right: 20px;
+      z-index: 100;
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      color: #FFB800;
+      letter-spacing: 0.06em;
+      pointer-events: none;
+    }
+
+    /* ══════════════════════════════════════════
+       RETICLE OVERLAY
+    ══════════════════════════════════════════ */
+    .reticle-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 120px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .reticle {
+      position: relative;
+      width: min(42vw, 200px);
+      height: min(72vw, 340px);
+    }
+
+    .rc {
+      position: absolute;
+      width: 24px; height: 24px;
+      border-color: #00D4C8;
+      border-style: solid;
+      opacity: 0.65;
+    }
+    .rc.tl { top: 0; left: 0;  border-width: 2px 0 0 2px; border-radius: 3px 0 0 0; }
+    .rc.tr { top: 0; right: 0; border-width: 2px 2px 0 0; border-radius: 0 3px 0 0; }
+    .rc.bl { bottom: 0; left: 0;  border-width: 0 0 2px 2px; border-radius: 0 0 0 3px; }
+    .rc.br { bottom: 0; right: 0; border-width: 0 2px 2px 0; border-radius: 0 0 3px 0; }
+
+    .scan-line {
+      position: absolute;
+      left: 6px; right: 6px;
+      height: 1.5px;
+      background: linear-gradient(90deg, transparent, #00D4C8 30%, #00D4C8 70%, transparent);
+      top: 0;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .finder-active .scan-line {
+      opacity: 0.65;
+      animation: scanDown 2.4s linear infinite;
+    }
+
+    @keyframes scanDown {
+      0%   { top: 4px; }
+      100% { top: calc(100% - 4px); }
+    }
+  /* ══════════════════════════════════════════
+    CROSSHAIR STABILIZER
+  ══════════════════════════════════════════ */
+
+  .crosshair{
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    z-index:55;
+  }
+
+  .crosshair::before{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:120px;
+    height:1px;
+    background:rgba(0,212,200,.4);
+    transform:translate(-50%,-50%);
+  }
+
+  .crosshair::after{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:50%;
+    width:1px;
+    height:120px;
+    background:rgba(0,212,200,.4);
+    transform:translate(-50%,-50%);
+  }
+
+    /* ══════════════════════════════════════════
+       BOTTOM CONTROLS PANEL
+    ══════════════════════════════════════════ */
+    .controls-panel {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      z-index: 100;
+      background: rgba(10, 15, 30, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 0.5px solid rgba(30, 41, 64, 0.9);
+      padding: 14px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .panel-section-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: rgba(58, 80, 112, 0.9);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    /* Mode toggle row */
+    .mode-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      flex: 1;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 0.04em;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(30, 48, 80, 0.9);
+      background: rgba(17, 25, 41, 0.95);
+      color: #8BA4C4;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn:hover   { border-color: #2E4570; color: #C8D8EE; background: rgba(22, 33, 58, 0.95); }
+    .btn.active  { border-color: #00D4C8; color: #00D4C8; background: rgba(0, 20, 26, 0.95); }
+
+    /* Zoom row */
+    .zoom-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .zoom-btn {
+      font-family: 'Space Mono', monospace;
+      font-size: 18px;
+      line-height: 1;
+      width: 34px; height: 34px;
+      border-radius: 7px;
+      border: 1px solid rgba(30, 48, 80, 0.9);
+      background: rgba(17, 25, 41, 0.95);
+      color: #8BA4C4;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.15s, color 0.15s;
+      flex-shrink: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .zoom-btn:hover { border-color: #00D4C8; color: #00D4C8; }
+
+    .zoom-track {
+      flex: 1;
+      height: 3px;
+      background: rgba(30, 41, 64, 0.9);
+      border-radius: 2px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .zoom-fill {
+      position: absolute;
+      top: 0; left: 0;
+      height: 100%;
+      background: #00D4C8;
+      border-radius: 2px;
+      width: 14%;
+      transition: width 0.15s;
+      pointer-events: none;
+    }
+
+    .zoom-thumb {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 12px; height: 12px;
+      background: #00D4C8;
+      border-radius: 50%;
+      left: 14%;
+      transition: left 0.15s;
+      box-shadow: 0 0 0 3px rgba(10,15,30,0.9), 0 0 0 4.5px rgba(0,212,200,0.3);
+      pointer-events: none;
+    }
+
+    .zoom-readout {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      color: #FFB800;
+      min-width: 42px;
+      text-align: right;
+      letter-spacing: 0.06em;
+      flex-shrink: 0;
+    }
+
+    /* icon helpers */
+    .icon-normal {
+      width: 15px; height: 15px;
+      position: relative;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .icon-normal::before,
+    .icon-normal::after,
+    .icon-normal span {
+      content: '';
+      display: block;
+      position: absolute;
+      height: 2px;
+      background: currentColor;
+      border-radius: 1px;
+    }
+    .icon-normal::before { width: 15px; top: 2px;  left: 0; }
+    .icon-normal span    { width: 10px; top: 7px;  left: 2px; }
+    .icon-normal::after  { width: 15px; top: 12px; left: 0; }
+
+    .icon-finder {
+      width: 15px; height: 15px;
+      position: relative;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .icon-finder::before {
+      content: '';
+      display: block;
+      width: 13px; height: 13px;
+      border: 1.5px solid currentColor;
+      border-radius: 50%;
+      position: absolute; top: 1px; left: 1px;
+    }
+    .icon-finder::after {
+      content: '';
+      display: block;
+      width: 5px; height: 5px;
+      background: currentColor;
+      border-radius: 50%;
+      position: absolute; top: 5px; left: 5px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ══════════════════════════════════════════
+       A-FRAME SCENE (full-screen AR)
+  ══════════════════════════════════════════ -->
+  <a-scene
+    mindar-image="imageTargetSrc: targets.mind;"
+    color-space="sRGB"
+    renderer="colorManagement: true"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+  >
+    <a-assets>
+      <img id="normalImage" src="veins_normal.png">
+      <img id="finderImage" src="veinfinder.png">
+      <img id="injectionImage" src="injection_site.png">
+    </a-assets>
+
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity mindar-image-target="targetIndex: 0">
+      <a-plane
+        id="vascularPlane"
+        rotation="0 0 0"
+        src="#normalImage"
+        width="1"
+        height="1.778"
+        position="0 0 0"
+        transparent="true"
+      ></a-plane>
+    </a-entity>
+  </a-scene>
+
+  <!-- ══════════════════════════════════════════
+       TOP HUD
+  ══════════════════════════════════════════ -->
+  <div class="hud-top">
+    <div class="hud-badge">
+      <span class="status-dot"></span>LIVE<br>
+      VF-2400
+    </div>
+    <div>
+  <div class="mode-label" id="modeLabel">NORMAL</div>
+  <div
+    id="trackingStatus"
+    style="
+      font-family:'Space Mono',monospace;
+      font-size:11px;
+      color:#00D4C8;
+      margin-top:6px;
+      text-align:right;
+    ">
+    SEARCHING
+  </div>
+</div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       RETICLE OVERLAY
+  ══════════════════════════════════════════ -->
+  <div class="reticle-overlay">
+    <div class="crosshair"></div>
+    <div class="reticle" id="reticle">
+      <div class="rc tl"></div>
+      <div class="rc tr"></div>
+      <div class="rc bl"></div>
+      <div class="rc br"></div>
+      <div class="scan-line"></div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════
+       BOTTOM CONTROLS PANEL
+  ══════════════════════════════════════════ -->
+  <div class="controls-panel">
+
+    <div>
+      <div class="panel-section-label">Imaging mode</div>
+      <div class="mode-row">
+        <!-- NORMAL -->
+        <button class="btn active" id="normalBtn" onclick="setMode('normal')">
+          <span class="icon-normal" aria-hidden="true"><span></span></span>
+          Normal
+        </button>
+        <button class="btn" id="finderBtn" onclick="setMode('finder')">
+          <span class="icon-finder" aria-hidden="true"></span>
+          Vein Finder
+        </button>
+        <button class="btn" id="injectionBtn" onclick="setMode('injection')">
+          Injection
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       SCRIPTS
+  ══════════════════════════════════════════ -->
+  <script>
+    /* ─── State ─── */
+    let finderMode   = false;
+
+    /* ─── A-Frame plane reference (wait for scene ready) ─── */
+AFRAME.registerComponent(
+      'stabilizer',
+      {
+        tick:function(){
+          const pos =
+          this.el.object3D.position;
+          if(!initialized){
+            smoothPos.x=pos.x;
+            smoothPos.y=pos.y;
+            smoothPos.z=pos.z;
+            initialized=true;
+          }
+          smoothPos.x +=
+          (pos.x-smoothPos.x)
+          *
+          SMOOTHING;
+          smoothPos.y +=
+          (pos.y-smoothPos.y)
+          *
+          SMOOTHING;
+          smoothPos.z +=
+          (pos.z-smoothPos.z)
+          *
+          SMOOTHING;
+          pos.set(
+            smoothPos.x,
+            smoothPos.y,
+            smoothPos.z
+          );
+        }
+      });
+
+    let plane;
+    const modeLabel =
+    document.getElementById(
+    'modeLabel'
+    );
+    const SMOOTHING = 0.15;
+    let smoothPos = {
+      x:0,
+      y:0,
+      z:0
+    };
+
+    let initialized = false;
+    document.querySelector('a-scene').addEventListener('loaded', () => {
+      plane = document.getElementById('vascularPlane');
+      const target =
+      document.querySelector(
+      '[mindar-image-target]'
+      );
+      target.addEventListener(
+      'targetFound',
+      ()=>{
+      document.getElementById(
+      'trackingStatus'
+      ).textContent = 'LOCKED';
+      document.getElementById(
+      'trackingStatus'
+      ).style.color='#00D4C8';
+      }
+      );
+      target.addEventListener(
+      'targetLost',
+      ()=>{
+      document.getElementById(
+      'trackingStatus'
+      ).textContent='SEARCHING';
+      document.getElementById(
+      'trackingStatus'
+      ).style.color='#FFB800';
+      }
+      );
+    });
+
+    /* ─── Mode toggle ─── */
+function setMode(mode){
+  document
+    .querySelectorAll('.btn')
+    .forEach(btn => btn.classList.remove('active'));
+  if(mode === 'normal'){
+      document
+        .getElementById('normalBtn')
+        .classList.add('active');
+      plane.setAttribute(
+        'src',
+        '#normalImage'
+      );
+      plane.setAttribute(
+        'scale',
+        '1 1 1'
+      );
+      plane.setAttribute(
+        'position',
+        '0 0 0.01'
+      );
+      modeLabel.textContent = 'NORMAL';
+  }
+  else if(mode === 'finder'){
+      document
+        .getElementById('finderBtn')
+        .classList.add('active');
+      plane.setAttribute(
+        'src',
+        '#finderImage'
+      );
+      plane.setAttribute(
+        'scale',
+        '1 1 1'
+      );
+      plane.setAttribute(
+        'position',
+        '0 0 0.01'
+      );
+      modeLabel.textContent = 'VEIN FINDER';
+  }
+  else if(mode === 'injection'){
+      document
+        .getElementById('injectionBtn')
+        .classList.add('active');
+      plane.setAttribute(
+      'src',
+      '#injectionImage'
+      );
+
+      plane.setAttribute(
+      'scale',
+      '1 1 1'
+      );
+
+      plane.setAttribute(
+      'position',
+      '0 0 0.01'
+      );
+      modeLabel.textContent = 'INJECTION SITE';
+  }
+}
+
+    /* ─── Touch drag (one finger) ─── */
+    let dragging = false, lastX = 0, lastY = 0;
+
+    document.addEventListener('touchstart', e => {
+      if (e.target.closest('.controls-panel') || e.target.closest('.btn') || e.target.closest('.zoom-btn')) return;
+      if (e.touches.length === 1) {
+        dragging = true;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchmove', e => {
+      if (dragging && e.touches.length === 1 && plane) {
+        const dx = (e.touches[0].clientX - lastX) / 500;
+        const dy = (e.touches[0].clientY - lastY) / 500;
+        const pos = plane.getAttribute('position');
+        plane.setAttribute('position', { x: pos.x + dx, y: pos.y - dy, z: pos.z });
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+      }
+    }, { passive: true });
+
+    document.addEventListener('touchend', () => { dragging = false; }, { passive: true });
+  </script>
+
+</body>
+</html>
