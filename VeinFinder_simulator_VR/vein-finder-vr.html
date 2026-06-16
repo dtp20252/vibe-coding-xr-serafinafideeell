@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VeinSim VR — Vein Finder Training Simulator</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+  a-scene { width: 100vw; height: 100vh; }
+
+  #hud { position: fixed; top:0; left:0; right:0; bottom:0; pointer-events:none; z-index:100; display:none; }
+  #hud.active { display:block; }
+
+  /* Tutorial Panel */
+  #tutorial-panel {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    width: 520px;
+    background: rgba(4,20,40,0.90); border: 1px solid rgba(0,200,255,0.4);
+    border-radius: 14px; padding: 18px 26px 14px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 0 32px rgba(0,180,255,0.15), inset 0 0 60px rgba(0,60,120,0.2);
+    pointer-events: all;
+  }
+  #tutorial-panel .step-badge { font-size:10px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; margin-bottom:5px; }
+  #tutorial-panel h2 { font-size:16px; font-weight:600; color:#e8f4ff; margin-bottom:10px; line-height:1.3; }
+  #tutorial-panel .content { font-size:13px; color:#a0c8e8; line-height:1.7; margin-bottom:14px; min-height:60px; }
+  #tutorial-panel .content ul { padding-left:16px; margin-top:5px; }
+  #tutorial-panel .content li { margin-bottom:3px; }
+  #btn-next {
+    display:inline-flex; align-items:center; gap:8px;
+    background: linear-gradient(135deg,#0088cc,#00c8ff);
+    color:#fff; border:none; border-radius:8px; padding:9px 22px;
+    font-size:13px; font-weight:600; letter-spacing:0.5px; cursor:pointer; transition:all .2s;
+    pointer-events:all;
+  }
+  #btn-next:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(0,180,255,0.5); }
+  #btn-next:active { transform:scale(0.97); }
+
+  /* Progress Panel */
+  #progress-panel {
+    position:absolute; top:50%; right:16px; transform:translateY(-50%);
+    width:208px;
+    background:rgba(4,20,40,0.90); border:1px solid rgba(0,200,255,0.3);
+    border-radius:14px; padding:16px 14px;
+    backdrop-filter:blur(12px); box-shadow:0 0 24px rgba(0,180,255,0.1);
+  }
+  #progress-panel .panel-title { font-size:10px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; margin-bottom:12px; }
+  #progress-bar-outer { height:6px; background:rgba(0,200,255,0.12); border-radius:3px; margin-bottom:6px; overflow:hidden; }
+  #progress-bar-inner { height:100%; background:linear-gradient(90deg,#0088cc,#00c8ff); border-radius:3px; transition:width .6s ease; width:0%; }
+  #progress-percent { font-size:22px; font-weight:700; color:#e8f4ff; margin-bottom:14px; }
+  #progress-percent span { font-size:12px; font-weight:400; color:#5090b0; margin-left:2px; }
+  .step-list { list-style:none; }
+  .step-list li { display:flex; align-items:center; gap:8px; font-size:12px; color:#6090aa; padding:4px 0; border-bottom:1px solid rgba(0,200,255,0.06); }
+  .step-list li:last-child { border-bottom:none; }
+  .step-list li.done { color:#00c8ff; }
+  .step-list li.active { color:#e8f4ff; font-weight:600; }
+  .step-check { width:16px; height:16px; border-radius:50%; border:1.5px solid rgba(0,200,255,0.3); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:9px; }
+  .step-check.done { background:#0088cc; border-color:#0088cc; color:#fff; }
+  .step-check.active { border-color:#00c8ff; background:rgba(0,200,255,0.12); }
+
+  /* Flowchart Panel */
+  #flowchart-panel {
+    position:absolute; top:50%; left:16px; transform:translateY(-50%);
+    width:162px;
+    background:rgba(4,20,40,0.90); border:1px solid rgba(0,200,255,0.3);
+    border-radius:14px; padding:14px 12px;
+    backdrop-filter:blur(12px); box-shadow:0 0 24px rgba(0,180,255,0.1);
+  }
+  #flowchart-panel .panel-title { font-size:10px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; margin-bottom:12px; text-align:center; }
+  .flow-node { width:100%; padding:6px 8px; border-radius:7px; font-size:11px; text-align:center; border:1px solid rgba(0,200,255,0.2); color:#6090aa; background:rgba(0,40,80,0.4); transition:all .3s; line-height:1.3; }
+  .flow-node.active { border-color:#00c8ff; color:#e8f4ff; background:rgba(0,136,204,0.18); box-shadow:0 0 12px rgba(0,200,255,0.2); }
+  .flow-node.done { border-color:#0055aa; color:#0088cc; background:rgba(0,80,160,0.15); }
+  .flow-arrow { font-size:12px; color:rgba(0,200,255,0.3); margin:2px 0; line-height:1; text-align:center; }
+  .flow-arrow.active { color:#00c8ff; }
+
+  /* Scan overlay */
+  #scan-overlay { position:absolute; bottom:76px; left:50%; transform:translateX(-50%); display:none; flex-direction:column; align-items:center; gap:6px; }
+  #scan-overlay.active { display:flex; }
+  .scan-label { font-size:11px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; animation:blink 1.4s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .scan-bar { width:200px; height:3px; background:rgba(0,200,255,0.15); border-radius:2px; overflow:hidden; }
+  .scan-bar-fill { height:100%; background:linear-gradient(90deg,transparent,#00c8ff,transparent); animation:scan 1.8s infinite; }
+  @keyframes scan { from{transform:translateX(-100%)} to{transform:translateX(300%)} }
+
+  /* Completion */
+  #completion-screen {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:420px;
+    background:rgba(4,20,40,0.97); border:1px solid rgba(0,200,255,0.5);
+    border-radius:18px; padding:38px 34px; text-align:center;
+    backdrop-filter:blur(16px); box-shadow:0 0 60px rgba(0,180,255,0.25);
+    display:none; pointer-events:all;
+  }
+  #completion-screen.active { display:block; }
+  .check-ring { width:72px; height:72px; border-radius:50%; background:linear-gradient(135deg,#005588,#00c8ff); display:flex; align-items:center; justify-content:center; margin:0 auto 18px; font-size:30px; }
+  #completion-screen h2 { font-size:22px; font-weight:700; color:#e8f4ff; margin-bottom:10px; }
+  #completion-screen p { font-size:14px; color:#80b0cc; line-height:1.6; margin-bottom:22px; }
+  #btn-restart { display:inline-flex; align-items:center; gap:8px; background:transparent; color:#00c8ff; border:1px solid rgba(0,200,255,0.4); border-radius:8px; padding:9px 22px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
+  #btn-restart:hover { background:rgba(0,200,255,0.08); }
+
+  /* Start Screen */
+  #start-screen {
+    position:fixed; top:0; left:0; right:0; bottom:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:200; background:rgba(2,8,20,0.75); backdrop-filter:blur(6px);
+  }
+  #start-screen .logo-label { font-size:11px; font-weight:600; letter-spacing:4px; color:#00c8ff; text-transform:uppercase; margin-bottom:14px; }
+  #start-screen h1 { font-size:38px; font-weight:700; color:#e8f4ff; margin-bottom:8px; text-align:center; line-height:1.2; }
+  #start-screen h1 span { color:#00c8ff; }
+  #start-screen .sub { font-size:14px; color:#5090aa; margin-bottom:36px; text-align:center; }
+  #btn-start {
+    display:inline-flex; align-items:center; gap:12px;
+    background:linear-gradient(135deg,#005599,#00c8ff);
+    color:#fff; border:none; border-radius:12px; padding:16px 42px;
+    font-size:16px; font-weight:700; letter-spacing:0.5px; cursor:pointer;
+    transition:all .25s; box-shadow:0 0 40px rgba(0,180,255,0.3);
+  }
+  #btn-start:hover { transform:translateY(-2px); box-shadow:0 8px 40px rgba(0,180,255,0.5); }
+  .info-grid { display:flex; gap:16px; margin-top:36px; }
+  .info-card { background:rgba(4,20,40,0.7); border:1px solid rgba(0,200,255,0.2); border-radius:10px; padding:12px 18px; font-size:12px; color:#6090aa; text-align:center; min-width:108px; }
+  .info-card strong { display:block; font-size:18px; font-weight:700; color:#00c8ff; margin-bottom:4px; }
+</style>
+</head>
+<body>
+
+<a-scene
+  background="color: #010d1c"
+  renderer="antialias: true; colorManagement: true"
+  vr-mode-ui="enabled: true"
+  loading-screen="backgroundColor: #010d1c; dotsColor: #00c8ff"
+>
+
+  <!-- ═══════════════════════════════════════
+       ASSETS — Real models + vein texture
+  ═══════════════════════════════════════ -->
+  <a-assets timeout="30000">
+    <a-asset-item id="hand-model"        src="realistic_left_hand.glb"></a-asset-item>
+    <a-asset-item id="vein-finder-model" src="vena finder.glb"></a-asset-item>
+    <img           id="vena-img"         src="vena.png" crossorigin="anonymous">
+  </a-assets>
+
+  <!-- ═══════════════════════════════════════
+       LIGHTING
+  ═══════════════════════════════════════ -->
+  <a-entity light="type:ambient; color:#0d2848; intensity:0.7"></a-entity>
+  <a-entity light="type:directional; color:#c8e8ff; intensity:0.9" position="2 5 3"></a-entity>
+  <a-entity light="type:point; color:#00c8ff; intensity:0.5; distance:9" position="0 2.2 0"></a-entity>
+  <a-entity light="type:point; color:#0055bb; intensity:0.35; distance:12" position="-3 1.5 0"></a-entity>
+  <!-- Warm table light -->
+  <a-entity light="type:point; color:#88ccff; intensity:0.6; distance:4" position="0 1.5 -1"></a-entity>
+
+  <!-- ═══════════════════════════════════════
+       ROOM
+  ═══════════════════════════════════════ -->
+  <!-- Floor -->
+  <a-plane position="0 0 0" rotation="-90 0 0" width="14" height="14" color="#060e1c" material="metalness:0.25; roughness:0.85"></a-plane>
+  <!-- Grid -->
+  <a-entity position="0 0.008 0">
+    <a-entity geometry="primitive:plane;width:14;height:0.012" material="color:#0a1e38;opacity:0.9" rotation="-90 0 0" position="0 0 -4"></a-entity>
+    <a-entity geometry="primitive:plane;width:14;height:0.012" material="color:#0a1e38;opacity:0.9" rotation="-90 0 0" position="0 0 0"></a-entity>
+    <a-entity geometry="primitive:plane;width:14;height:0.012" material="color:#0a1e38;opacity:0.9" rotation="-90 0 0" position="0 0 4"></a-entity>
+    <a-entity geometry="primitive:plane;width:0.012;height:14" material="color:#0a1e38;opacity:0.9" rotation="-90 0 0" position="-4 0 0"></a-entity>
+    <a-entity geometry="primitive:plane;width:0.012;height:14" material="color:#0a1e38;opacity:0.9" rotation="-90 0 0" position="0 0 0"></a-entity>
+    <a-entity geometry="primitive:plane;width:0.012;height:14" material="color:#0a1e38;opacity:0.9" rotation="-90 0 0" position="4 0 0"></a-entity>
+  </a-entity>
+  <!-- Back wall -->
+  <a-plane position="0 2.5 -6" width="14" height="5.5" color="#050e1c"></a-plane>
+  <a-box position="0 2.5 -5.99" width="14" height="0.03" depth="0.01" color="#00c8ff" material="emissive:#00c8ff;emissiveIntensity:0.35"></a-box>
+  <!-- Left wall -->
+  <a-plane position="-6 2.5 0" rotation="0 90 0" width="14" height="5.5" color="#050e1c"></a-plane>
+  <!-- Right wall -->
+  <a-plane position="6 2.5 0" rotation="0 -90 0" width="14" height="5.5" color="#050e1c"></a-plane>
+  <!-- Ceiling -->
+  <a-plane position="0 5.5 0" rotation="90 0 0" width="14" height="14" color="#03090f"></a-plane>
+  <!-- Ceiling light strips -->
+  <a-box position="0 5.48 0" width="7" height="0.05" depth="0.16" color="#0080cc" material="emissive:#0080cc;emissiveIntensity:0.65"></a-box>
+  <a-box position="0 5.48 -2" width="7" height="0.05" depth="0.06" color="#002244" material="emissive:#002244;emissiveIntensity:0.4"></a-box>
+  <!-- Medical cross back wall -->
+  <a-entity position="0 3.5 -5.92">
+    <a-box width="0.08" height="0.5" depth="0.02" color="#00c8ff" material="emissive:#0088cc;emissiveIntensity:0.5"></a-box>
+    <a-box width="0.5" height="0.08" depth="0.02" color="#00c8ff" material="emissive:#0088cc;emissiveIntensity:0.5"></a-box>
+  </a-entity>
+  <a-text value="VEINSIM VR — Medical Training Simulator" color="#1a3e5e" position="0 2.0 -5.95" scale="0.28 0.28 0.28" align="center"></a-text>
+  <!-- Corner pillars -->
+  <a-cylinder radius="0.055" height="5.5" color="#060f1e" material="metalness:0.6" position="-5.9 2.75 -5.9"></a-cylinder>
+  <a-cylinder radius="0.055" height="5.5" color="#060f1e" material="metalness:0.6" position="5.9 2.75 -5.9"></a-cylinder>
+  <!-- Floor edge glow -->
+  <a-box width="0.02" height="0.05" depth="14" color="#001840" position="-5.8 0.03 0" material="emissive:#001840;emissiveIntensity:0.6"></a-box>
+  <a-box width="0.02" height="0.05" depth="14" color="#001840" position="5.8 0.03 0" material="emissive:#001840;emissiveIntensity:0.6"></a-box>
+
+  <!-- ═══════════════════════════════════════
+       CENTER TABLE
+  ═══════════════════════════════════════ -->
+  <a-box position="0 0.82 -1.2" width="3.2" height="0.06" depth="1.6" color="#0a1e35" material="metalness:0.55;roughness:0.4"></a-box>
+  <a-cylinder position="-1.4 0.4 -0.55" radius="0.04" height="0.82" color="#08162a"></a-cylinder>
+  <a-cylinder position="1.4 0.4 -0.55"  radius="0.04" height="0.82" color="#08162a"></a-cylinder>
+  <a-cylinder position="-1.4 0.4 -1.85" radius="0.04" height="0.82" color="#08162a"></a-cylinder>
+  <a-cylinder position="1.4 0.4 -1.85"  radius="0.04" height="0.82" color="#08162a"></a-cylinder>
+  <!-- Table glow edge -->
+  <a-box position="0 0.86 -0.37" width="3.2" height="0.02" depth="0.01" color="#00c8ff" material="emissive:#00c8ff;emissiveIntensity:0.45"></a-box>
+
+  <!-- ═══════════════════════════════════════
+       LEFT WALL — FLOWCHART AREA
+       Displays the vena.png image as a framed poster
+  ═══════════════════════════════════════ -->
+  <a-entity id="flowchart-area" position="-5.0 2.4 -1.2">
+    <!-- Frame backing -->
+    <a-box width="1.7" height="2.6" depth="0.05" color="#06111e" material="metalness:0.4" rotation="0 90 0"></a-box>
+    <!-- Top/bottom accent lines -->
+    <a-box width="0.05" height="2.65" depth="0.06" color="#0088cc" position="-0.005 0 1.35" rotation="0 0 0" material="emissive:#0066aa;emissiveIntensity:0.4"></a-box>
+    <!-- Panel label -->
+    <a-text value="VEIN ANATOMY" color="#00c8ff" position="0.06 1.25 1.37" scale="0.22 0.22 0.22" align="center" rotation="0 90 0"></a-text>
+    <a-text value="Reference Diagram" color="#2a5070" position="0.06 1.05 1.37" scale="0.14 0.14 0.14" align="center" rotation="0 90 0"></a-text>
+    <!-- vena.png displayed as image -->
+    <a-image src="#vena-img" width="1.4" height="2.1" position="0.06 -0.05 1.37" rotation="0 90 0" material="transparent:true;alphaTest:0.1"></a-image>
+  </a-entity>
+
+  <!-- ═══════════════════════════════════════
+       CENTER — REAL HAND MODEL
+  ═══════════════════════════════════════ -->
+  <a-entity id="hand-container" position="-0.4 1.05 -1.3" rotation="0 20 0" scale="1 1 1">
+    <!-- Real hand GLB -->
+    <a-gltf-model
+      id="hand-gltf"
+      src="#hand-model"
+      scale="0.05 0.05 0.05"
+      position="0 0 0"
+      rotation="90 0 0"
+    ></a-gltf-model>
+
+    <a-image
+        id="vein-overlay"
+        src="#vena-img"
+        scale="0.8 0.8 0.8"
+        position="0 0.02 0"
+        width="0.4"
+        height="0.6"
+        rotation="0 180 0"
+        opacity="0.6">
+    </a-image>
+
+    <script>
+    document.querySelector('#hand-gltf')
+    .addEventListener('model-loaded', () => {
+      console.log('HAND LOADED');
+    });
+
+    document.querySelector('#hand-gltf')
+    .addEventListener('model-error', (e) => {
+      console.error('HAND ERROR', e);
+    });
+    </script>
+
+    <!-- Vein overlay: vena.png as a transparent plane projected on top of the hand -->
+    <a-entity id="vein-overlay" visible="false">
+      <a-plane
+        src="#vena-img"
+        width="0.28" height="0.42"
+        position="0 0.04 0.02"
+        rotation="-10 0 0"
+        material="transparent:true; alphaTest:0.05; opacity:0.82; blending:additive; depthWrite:false"
+      ></a-plane>
+    </a-entity>
+
+    <!-- Vein labels (shown at step 4) -->
+    <a-entity id="vein-labels" visible="false">
+      <a-text value="Cephalic Vein"   color="#00e8ff" position="0.22 0.15 0.05" scale="0.16 0.16 0.16" align="left"></a-text>
+      <a-text value="Basilic Vein"    color="#80d0ff" position="-0.24 0.12 0.05" scale="0.16 0.16 0.16" align="right"></a-text>
+      <a-text value="Median Cubital"  color="#c0e8ff" position="0 0.24 0.05"  scale="0.14 0.14 0.14" align="center"></a-text>
+      <a-text value="Digital Veins"   color="#60b8d8" position="0 -0.22 0.05" scale="0.13 0.13 0.13" align="center"></a-text>
+      <!-- small pointer lines as thin boxes -->
+      <a-box width="0.10" height="0.003" depth="0.003" color="#00c8ff" material="emissive:#00c8ff;emissiveIntensity:0.7" position="0.13 0.15 0.04" rotation="0 0 20"></a-box>
+      <a-box width="0.10" height="0.003" depth="0.003" color="#80d0ff" material="emissive:#80d0ff;emissiveIntensity:0.6" position="-0.14 0.12 0.04" rotation="0 0 -20"></a-box>
+    </a-entity>
+  </a-entity>
+
+  <!-- ═══════════════════════════════════════
+       RIGHT — REAL VEIN FINDER MODEL
+  ═══════════════════════════════════════ -->
+  <a-entity id="vein-finder-container" position="0.65 1.1 -1.3" visible="false">
+    <a-gltf-model
+      id="vein-finder-gltf"
+      class="clickable"
+      src="#vein-finder-model"
+      scale="0.08 0.08 0.08"
+      position="0 0 0"
+      rotation="0 -30 0"
+    ></a-gltf-model>
+    <!-- IR Projection cone (step 5) -->
+    <a-entity id="vein-projection" visible="false">
+      <a-cone
+        radius-bottom="0.22" radius-top="0.01" height="0.38"
+        color="#1a6fd4" opacity="0.10" transparent="true"
+        position="0 -0.22 0.05" rotation="180 0 0"
+        material="emissive:#0050cc;emissiveIntensity:0.25;side:double;depthWrite:false"
+      ></a-cone>
+    </a-entity>
+    <a-text value="Vein Finder" color="#6090b0" position="0 -0.28 0" scale="0.12 0.12 0.12" align="center"></a-text>
+    <a-text
+      id="scan-instruction"
+      value="CLICK DEVICE TO SCAN"
+      color="#00c8ff"
+      position="0 -0.42 0"
+      scale="0.15 0.15 0.15"
+      align="center"
+      visible="false">
+    </a-text>
+  </a-entity>
+
+  <!-- ═══════════════════════════════════════
+       CAMERA
+  ═══════════════════════════════════════ -->
+  <a-entity id="camera-rig" position="0 0 2.2">
+    <a-camera
+      look-controls="enabled:true; magicWindowTrackingEnabled:false"
+      wasd-controls="enabled:true; fly:false; acceleration:18"
+      position="0 1.6 0"
+      fov="75"
+    >
+      <a-entity
+        cursor="fuse:false; rayOrigin:mouse"
+        raycaster="objects:.clickable; far:20"
+        position="0 0 -1"
+        geometry="primitive:ring; radiusInner:0.006; radiusOuter:0.009"
+        material="color:#00c8ff; shader:flat; opacity:0.65"
+      ></a-entity>
+    </a-camera>
+  </a-entity>
+</a-scene>
+
+<!-- ═══════════════════════════════════════════
+     HUD OVERLAY
+═══════════════════════════════════════════ -->
+
+<!-- Start Screen -->
+<div id="start-screen">
+  <div class="logo-label">Healthcare Simulation Platform</div>
+  <h1>Vein<span>Sim</span> VR</h1>
+  <p class="sub">Guided Vein Identification &amp; Vein Finder Training Simulator</p>
+  <button id="btn-start" onclick="startTraining()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+    START TRAINING
+  </button>
+  <div class="info-grid">
+    <div class="info-card"><strong>6</strong>Learning Steps</div>
+    <div class="info-card"><strong>~15</strong>Minutes</div>
+    <div class="info-card"><strong>VR</strong>Ready</div>
+  </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <!-- Tutorial Panel -->
+  <div id="tutorial-panel">
+    <div class="step-badge" id="step-badge">STEP 1 OF 6</div>
+    <h2 id="step-title">Introduction to Vein Finder</h2>
+    <div class="content" id="step-content"></div>
+    <button id="btn-next" onclick="nextStep()">NEXT ›</button>
+  </div>
+
+  <!-- Flowchart (left) -->
+  <div id="flowchart-panel">
+    <div class="panel-title">Learning Flow</div>
+    <div><div class="flow-node" id="flow-0">Introduction</div></div>
+    <div class="flow-arrow" id="arr-0">↓</div>
+    <div><div class="flow-node" id="flow-1">Vein Anatomy</div></div>
+    <div class="flow-arrow" id="arr-1">↓</div>
+    <div><div class="flow-node" id="flow-2">Visualization</div></div>
+    <div class="flow-arrow" id="arr-2">↓</div>
+    <div><div class="flow-node" id="flow-3">Identification</div></div>
+    <div class="flow-arrow" id="arr-3">↓</div>
+    <div><div class="flow-node" id="flow-4">Vein Finder Demo</div></div>
+    <div class="flow-arrow" id="arr-4">↓</div>
+    <div><div class="flow-node" id="flow-5">Evaluation</div></div>
+  </div>
+
+  <!-- Progress (right) -->
+  <div id="progress-panel">
+    <div class="panel-title">Progress</div>
+    <div id="progress-bar-outer"><div id="progress-bar-inner"></div></div>
+    <div id="progress-percent">0<span>%</span></div>
+    <ul class="step-list">
+      <li id="prog-0"><span class="step-check" id="chk-0"></span>Introduction</li>
+      <li id="prog-1"><span class="step-check" id="chk-1"></span>Vein Anatomy</li>
+      <li id="prog-2"><span class="step-check" id="chk-2"></span>Visualization</li>
+      <li id="prog-3"><span class="step-check" id="chk-3"></span>Identification</li>
+      <li id="prog-4"><span class="step-check" id="chk-4"></span>Vein Finder Demo</li>
+      <li id="prog-5"><span class="step-check" id="chk-5"></span>Evaluation</li>
+    </ul>
+  </div>
+
+  <!-- Scan animation -->
+  <div id="scan-overlay">
+    <div class="scan-label">Scanning veins</div>
+    <div class="scan-bar"><div class="scan-bar-fill"></div></div>
+  </div>
+
+  <!-- Completion -->
+  <div id="completion-screen">
+    <div class="check-ring">✓</div>
+    <h2>Training Completed!</h2>
+    <p>Congratulations! You have successfully completed all 6 steps of the Vein Finder training module. You can now identify key veins and understand how the device aids clinical venipuncture.</p>
+    <button id="btn-restart" onclick="restartTraining()">↺ &nbsp;Restart Training</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════
+// STEP CONTENT DATA
+// ═══════════════════════════════
+const STEPS = [
+  {
+    title: "Introduction to Vein Finder",
+    badge: "STEP 1 OF 6 — Introduction",
+    content: `<p>A <strong>Vein Finder</strong> is a non-invasive medical imaging device that uses near-infrared (NIR) light to detect and project a real-time vein map onto the skin surface.</p>
+<ul>
+  <li><strong>Purpose:</strong> Improve first-attempt IV insertion success rates</li>
+  <li><strong>Benefits:</strong> Reduces patient discomfort, minimizes complications</li>
+  <li><strong>Clinical use:</strong> IV therapy, blood draws, chemotherapy, pediatric care</li>
+</ul>`,
+    scene: () => { showVeins(false); showLabels(false); showFinder(false); scanAnim(false); }
+  },
+  {
+    title: "Vein Anatomy",
+    badge: "STEP 2 OF 6 — Anatomy",
+    content: `<p>Veins carry deoxygenated blood back to the heart. For venipuncture, the <em>superficial veins of the forearm and hand</em> are most commonly accessed.</p>
+<ul>
+  <li><strong>Cephalic Vein</strong> — lateral forearm, first choice for IV access</li>
+  <li><strong>Basilic Vein</strong> — medial forearm, large but less stable</li>
+  <li><strong>Median Cubital Vein</strong> — antecubital fossa, most common venipuncture site</li>
+  <li><strong>Digital Veins</strong> — dorsal hand veins, used as alternative access</li>
+</ul>
+<p style="color:#00c8ff;font-size:12px;margin-top:8px;">▶ Refer to the vein anatomy diagram on the left wall</p>`,
+    scene: () => { showVeins(false); showLabels(false); showFinder(false); scanAnim(false); }
+  },
+  {
+    title: "Vein Visualization",
+    badge: "STEP 3 OF 6 — Visualization",
+    content: `<p>Observe the virtual hand model. Vein pathways are now highlighted to show how they appear beneath the skin when illuminated by NIR light.</p>
+<ul>
+  <li>Hemoglobin in blood strongly absorbs NIR light (700–1000 nm)</li>
+  <li>Surrounding tissue reflects the light, creating high contrast</li>
+  <li>The projected map outlines exact vein positions in real-time</li>
+</ul>
+<p style="color:#00c8ff;font-size:12px;margin-top:8px;">▶ Vein overlay is now visible on the hand model</p>`,
+    scene: () => { showVeins(true); showLabels(false); showFinder(false); scanAnim(true); }
+  },
+  {
+    title: "Vein Identification",
+    badge: "STEP 4 OF 6 — Identification",
+    content: `<p>Interactive labels now identify the major veins on the hand model. Study the position and pathway of each vessel.</p>
+<ul>
+  <li><strong>Cephalic Vein</strong> — visible along the radial (thumb) side</li>
+  <li><strong>Basilic Vein</strong> — runs along the ulnar (pinky) side</li>
+  <li><strong>Median Cubital</strong> — connects the two at the antecubital fossa</li>
+  <li><strong>Digital Veins</strong> — fine branches across the dorsum of the hand</li>
+</ul>`,
+    scene: () => { showVeins(true); showLabels(true); showFinder(false); scanAnim(false); }
+  },
+{
+    title: "Vein Finder Demonstration",
+    badge: "STEP 5 OF 6 — Device Demo",
+    content: `
+    <p>
+      The <strong>Vein Finder device</strong> is now displayed beside the hand model.
+      To begin the demonstration, click the device and observe how near-infrared
+      technology detects and projects veins onto the skin surface.
+    </p>
+
+    <ul>
+      <li>Emits near-infrared (NIR) light across the target area</li>
+      <li>Captures reflected light patterns from subcutaneous veins</li>
+      <li>Processes the image in real time with minimal latency</li>
+      <li>Projects a visible vein map directly onto the skin surface</li>
+      <li>Improves vein localization for venipuncture procedures</li>
+    </ul>
+
+    <p style="color:#00c8ff;font-size:12px;margin-top:8px;">
+      ▶ Click the Vein Finder device to start the scanning process
+    </p>
+    `,
+
+    scene: () => {
+
+        // Hide veins before scanning
+        showVeins(false);
+        showLabels(false);
+
+        // Show device
+        showFinder(true);
+
+        // Hide scan animation until device clicked
+        scanAnim(false);
+
+        // Show instruction text
+        const txt = document.querySelector("#scan-instruction");
+
+        if (txt) {
+            txt.setAttribute("visible", true);
+        }
+
+        // Reset scan state
+        scanCompleted = false;
+    }
+},
+  {
+    title: "Practice & Evaluation",
+    badge: "STEP 6 OF 6 — Evaluation",
+    content: `<p>You have completed the guided training. Review the key learning objectives:</p>
+<ul>
+  <li>✓ Understand what a Vein Finder is and how it works</li>
+  <li>✓ Identify the cephalic, basilic, and median cubital veins</li>
+  <li>✓ Recognise how veins appear beneath the skin surface</li>
+  <li>✓ Understand clinical benefits of NIR-assisted venipuncture</li>
+</ul>
+<p style="color:#00c8ff;font-size:12px;margin-top:8px;">Press FINISH to complete the training session.</p>`,
+    scene: () => { showVeins(true); showLabels(true); showFinder(true); scanAnim(false); },
+    isLast: true
+  }
+];
+
+// ═══════════════════════════════
+// SCENE HELPERS
+// ═══════════════════════════════
+function showVeins(v)  { setVis('#vein-overlay', v); }
+function showLabels(v) { setVis('#vein-labels', v); }
+function showFinder(v) {
+  setVis('#vein-finder-container', v);
+  setVis('#vein-projection', v);
+}
+function scanAnim(v)   { document.getElementById('scan-overlay').classList.toggle('active', v); }
+function setVis(sel, v){ const el = document.querySelector(sel); if (el) el.setAttribute('visible', v); }
+
+// ═══════════════════════════════
+// STATE & FLOW
+// ═══════════════════════════════
+let currentStep = 0;
+
+function startTraining() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('hud').classList.add('active');
+  currentStep = 0;
+  renderStep(0);
+}
+
+function renderStep(idx) {
+  const s = STEPS[idx];
+  document.getElementById('step-badge').textContent   = s.badge;
+  document.getElementById('step-title').textContent   = s.title;
+  document.getElementById('step-content').innerHTML   = s.content;
+  document.getElementById('btn-next').innerHTML = s.isLast
+    ? '✓ &nbsp;FINISH TRAINING'
+    : 'NEXT &nbsp;›';
+
+  for (let i = 0; i < 6; i++) {
+    document.getElementById('flow-' + i).className = 'flow-node' + (i < idx ? ' done' : i === idx ? ' active' : '');
+    const arr = document.getElementById('arr-' + i);
+    if (arr) arr.className = 'flow-arrow' + (i <= idx ? ' active' : '');
+    const li  = document.getElementById('prog-' + i);
+    const chk = document.getElementById('chk-' + i);
+    li.className  = i < idx ? 'done' : i === idx ? 'active' : '';
+    chk.className = 'step-check' + (i < idx ? ' done' : i === idx ? ' active' : '');
+    chk.textContent = i < idx ? '✓' : '';
+  }
+
+  const pct = Math.round((idx / 6) * 100);
+  document.getElementById('progress-bar-inner').style.width = pct + '%';
+  document.getElementById('progress-percent').innerHTML     = pct + '<span>%</span>';
+
+  if (s.scene) s.scene();
+}
+
+function nextStep() {
+  if (currentStep < STEPS.length - 1) {
+    currentStep++;
+    renderStep(currentStep);
+  } else {
+    // 100% complete
+    document.getElementById('progress-bar-inner').style.width = '100%';
+    document.getElementById('progress-percent').innerHTML = '100<span>%</span>';
+    for (let i = 0; i < 6; i++) {
+      document.getElementById('prog-' + i).className  = 'done';
+      document.getElementById('chk-' + i).className   = 'step-check done';
+      document.getElementById('chk-' + i).textContent = '✓';
+      document.getElementById('flow-' + i).className  = 'flow-node done';
+    }
+    document.getElementById('tutorial-panel').style.display = 'none';
+    document.getElementById('completion-screen').classList.add('active');
+  }
+}
+
+function restartTraining() {
+  document.getElementById('completion-screen').classList.remove('active');
+  document.getElementById('tutorial-panel').style.display = '';
+  currentStep = 0;
+  renderStep(0);
+}
+</script>
+</body>
+<script>
+let scanCompleted = false;
+
+document.addEventListener("DOMContentLoaded", () => {
+
+  const finder = document.querySelector("#vein-finder-gltf");
+
+  if (finder) {
+
+    finder.addEventListener("click", () => {
+
+      if (currentStep !== 4) return;
+      if (scanCompleted) return;
+
+      scanCompleted = true;
+
+      document.getElementById("scan-overlay")
+        .classList.add("active");
+
+      const cone = document.querySelector("#vein-projection");
+
+      if (cone) {
+        cone.setAttribute("visible", true);
+      }
+
+      setTimeout(() => {
+        document.getElementById("scan-overlay")
+          .classList.remove("active");
+        showVeins(true);
+        showLabels(true);
+         // Sembunyikan tulisan CLICK DEVICE TO SCAN
+        const txt = document.querySelector("#scan-instruction");
+        if(txt){
+            txt.setAttribute("visible", false);
+    }
+        alert(
+          "Scan Complete!\n\nVeins successfully detected."
+        );
+
+      }, 2500);
+
+    });
+
+  }
+
+});
+</script>
+</html>

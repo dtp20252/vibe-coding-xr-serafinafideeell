@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VeinSim VR — Vein Finder Game Simulator</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
+  a-scene { width: 100vw; height: 100vh; }
+
+  #hud { position: fixed; top:0; left:0; right:0; bottom:0; pointer-events:none; z-index:100; display:none; }
+  #hud.active { display:block; }
+
+  /* Tutorial Panel */
+  #tutorial-panel {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    width: 520px;
+    background: rgba(4,20,40,0.90); border: 1px solid rgba(0,200,255,0.4);
+    border-radius: 14px; padding: 18px 26px 14px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 0 32px rgba(0,180,255,0.15), inset 0 0 60px rgba(0,60,120,0.2);
+    pointer-events: all;
+  }
+  #tutorial-panel .step-badge { font-size:10px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; margin-bottom:5px; }
+  #tutorial-panel h2 { font-size:16px; font-weight:600; color:#e8f4ff; margin-bottom:10px; line-height:1.3; }
+  #tutorial-panel .content { font-size:13px; color:#a0c8e8; line-height:1.7; margin-bottom:14px; min-height:60px; }
+  
+  #btn-next {
+    display:inline-flex; align-items:center; gap:8px;
+    background: linear-gradient(135deg,#0088cc,#00c8ff);
+    color:#fff; border:none; border-radius:8px; padding:9px 22px;
+    font-size:13px; font-weight:600; letter-spacing:0.5px; cursor:pointer; transition:all .2s;
+    pointer-events:all;
+  }
+  #btn-next:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 4px 20px rgba(0,180,255,0.5); }
+  #btn-next:disabled { background: #2a3a4a; color: #5a6a7a; cursor: not-allowed; box-shadow: none; }
+
+  /* Tombol Ambil Perangkat */
+  #btn-action {
+    display:none; align-items:center; gap:8px;
+    background: linear-gradient(135deg,#ff5500,#ffaa00);
+    color:#fff; border:none; border-radius:8px; padding:9px 22px;
+    font-size:13px; font-weight:600; letter-spacing:0.5px; cursor:pointer; transition:all .2s;
+    pointer-events:all; margin-top: 8px;
+  }
+  #btn-action.visible { display: inline-flex; }
+
+  /* AREA SENSOR HITBOX MURNI (HTML 2D OVERLAY) */
+  #medical-scan-zone {
+    display: none; position: absolute;
+    top: 55%; left: 50%; transform: translate(-50%, -50%);
+    width: 160px; height: 160px;
+    border: 3px dashed #ff3333; border-radius: 50%;
+    pointer-events: all; cursor: none; z-index: 150;
+    background: rgba(255, 0, 0, 0.03);
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.2);
+    transition: all 0.3s;
+  }
+  #medical-scan-zone.active { display: block; }
+  #medical-scan-zone:hover { border-color: #00ff55; background: rgba(0, 255, 85, 0.05); box-shadow: 0 0 25px rgba(0, 255, 85, 0.4); }
+
+  /* Progress Panel */
+  #progress-panel {
+    position:absolute; top:50%; right:16px; transform:translateY(-50%);
+    width:208px;
+    background:rgba(4,20,40,0.90); border:1px solid rgba(0,200,255,0.3);
+    border-radius:14px; padding:16px 14px;
+    backdrop-filter:blur(12px); box-shadow:0 0 24px rgba(0,180,255,0.1);
+  }
+  #progress-panel .panel-title { font-size:10px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; margin-bottom:12px; }
+  #progress-bar-outer { height:6px; background:rgba(0,200,255,0.12); border-radius:3px; margin-bottom:6px; overflow:hidden; }
+  #progress-bar-inner { height:100%; background:linear-gradient(90deg,#0088cc,#00c8ff); border-radius:3px; transition:width .1s linear; width:0%; }
+  #progress-percent { font-size:22px; font-weight:700; color:#e8f4ff; margin-bottom:14px; }
+  #progress-percent span { font-size:12px; font-weight:400; color:#5090b0; margin-left:2px; }
+
+  /* Flowchart Panel */
+  #flowchart-panel {
+    position:absolute; top:50%; left:16px; transform:translateY(-50%);
+    width:180px;
+    background:rgba(4,20,40,0.90); border:1px solid rgba(0,200,255,0.3);
+    border-radius:14px; padding:14px 12px;
+    backdrop-filter:blur(12px); box-shadow:0 0 24px rgba(0,180,255,0.1);
+  }
+  #flowchart-panel .panel-title { font-size:10px; font-weight:600; letter-spacing:2px; color:#00c8ff; text-transform:uppercase; margin-bottom:12px; text-align:center; }
+  .flow-node { width:100%; padding:8px; border-radius:7px; font-size:11px; text-align:center; border:1px solid rgba(0,200,255,0.2); color:#6090aa; background:rgba(0,40,80,0.4); transition:all .3s; line-height:1.3; }
+  .flow-node.active { border-color:#00c8ff; color:#e8f4ff; background:rgba(0,136,204,0.18); box-shadow:0 0 12px rgba(0,200,255,0.2); font-weight: bold; }
+  .flow-node.done { border-color:#0055aa; color:#0088cc; background:rgba(0,80,160,0.15); }
+  .flow-arrow { font-size:12px; color:rgba(0,200,255,0.3); margin:2px 0; line-height:1; text-align:center; }
+  .flow-arrow.active { color:#00c8ff; }
+
+  /* Scan overlay */
+  #scan-overlay { position:absolute; bottom:76px; left:50%; transform:translateX(-50%); display:none; flex-direction:column; align-items:center; gap:6px; }
+  #scan-overlay.active { display:flex; }
+  .scan-label { font-size:11px; font-weight:600; letter-spacing:2px; color:#ff3333; text-transform:uppercase; animation:blink 1.4s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .scan-bar { width:200px; height:6px; background:rgba(255,0,0,0.15); border-radius:3px; overflow:hidden; }
+  .scan-bar-fill { height:100%; width: 0%; background: linear-gradient(90deg, #ff3333, #ffaa00); transition: width 0.1s linear; }
+
+  /* Completion */
+  #completion-screen {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:420px;
+    background:rgba(4,20,40,0.97); border:1px solid rgba(0,200,255,0.5);
+    border-radius:18px; padding:38px 34px; text-align:center;
+    backdrop-filter:blur(16px); box-shadow:0 0 60px rgba(0,180,255,0.25);
+    display:none; pointer-events:all;
+  }
+  #completion-screen.active { display:block; }
+  .check-ring { width:72px; height:72px; border-radius:50%; background:linear-gradient(135deg,#005588,#00c8ff); display:flex; align-items:center; justify-content:center; margin:0 auto 18px; font-size:30px; }
+  #completion-screen h2 { font-size:22px; font-weight:700; color:#e8f4ff; margin-bottom:10px; }
+  #completion-screen p { font-size:14px; color:#80b0cc; line-height:1.6; margin-bottom:22px; }
+  #btn-restart { display:inline-flex; align-items:center; gap:8px; background:transparent; color:#00c8ff; border:1px solid rgba(0,200,255,0.4); border-radius:8px; padding:9px 22px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
+  #btn-restart:hover { background:rgba(0,200,255,0.08); }
+
+  /* Start Screen */
+  #start-screen {
+    position:fixed; top:0; left:0; right:0; bottom:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    z-index:200; background:rgba(2,8,20,0.75); backdrop-filter:blur(6px);
+  }
+  #start-screen .logo-label { font-size:11px; font-weight:600; letter-spacing:4px; color:#00c8ff; text-transform:uppercase; margin-bottom:14px; }
+  #start-screen h1 { font-size:38px; font-weight:700; color:#e8f4ff; margin-bottom:8px; text-align:center; line-height:1.2; }
+  #start-screen h1 span { color:#00c8ff; }
+  #start-screen .sub { font-size:14px; color:#5090aa; margin-bottom:36px; text-align:center; }
+  #btn-start {
+    display:inline-flex; align-items:center; gap:12px;
+    background:linear-gradient(135deg,#005599,#00c8ff);
+    color:#fff; border:none; border-radius:12px; padding:16px 42px;
+    font-size:16px; font-weight:700; letter-spacing:0.5px; cursor:pointer;
+    transition:all .25s; box-shadow:0 0 40px rgba(0,180,255,0.3);
+  }
+</style>
+</head>
+<body>
+
+<a-scene
+  background="color: #010d1c"
+  renderer="antialias: true; colorManagement: true"
+  vr-mode-ui="enabled: false"
+>
+  <a-assets timeout="30000">
+    <a-asset-item id="hand-model"        src="realistic_left_hand.glb"></a-asset-item>
+    <a-asset-item id="vein-finder-model" src="vena finder.glb"></a-asset-item>
+    <img id="vena-poster" src="anatomi vena.png" crossorigin="anonymous">
+    <img id="scan-vena-img" src="scan vena.png" crossorigin="anonymous">
+  </a-assets>
+
+  <a-entity light="type:ambient; color:#0d2848; intensity:0.7"></a-entity>
+  <a-entity light="type:directional; color:#c8e8ff; intensity:0.9" position="2 5 3"></a-entity>
+  <a-entity light="type:point; color:#00c8ff; intensity:0.5; distance:9" position="0 2.2 0"></a-entity>
+
+  <a-plane position="0 0 0" rotation="-90 0 0" width="14" height="14" color="#060e1c"></a-plane>
+  <a-plane position="0 2.5 -6" width="14" height="5.5" color="#050e1c"></a-plane>
+  <a-text value="VEINSIM VR — Medical Training Simulator" color="#c5e8f2" position="0 2.5 -6.0" scale="2 2 2" align="center"></a-text>
+
+  <a-entity id="flowchart-area" position="-4.5 2.2 -1.2" rotation="0 90 0">
+    <a-box width="1.8" height="2.4" depth="0.05" color="#0a1e35"></a-box>
+    <a-image src="#vena-poster" width="1.6" height="2.2" position="0 0 0.03"></a-image>
+  </a-entity>
+
+  <a-box position="0 0.8 -1.2" width="2.5" height="0.06" depth="1.4" color="#0a1e35"></a-box>
+  <a-cylinder position="-1.1 0.4 -0.6" radius="0.03" height="0.8" color="#08162a"></a-cylinder>
+  <a-cylinder position="1.1 0.4 -0.6"  radius="0.03" height="0.8" color="#08162a"></a-cylinder>
+
+  <a-entity id="hand-container" position="0.000 1.482 -1.200" rotation="90.000 0.000 0.000">
+    <a-gltf-model id="hand-gltf" src="#hand-model" scale="0.07 0.07 0.07" position="0 0 0" rotation="0 0 0"></a-gltf-model>
+
+    <a-entity id="vein-overlay" visible="false" position="0.008 0.089 -0.129" rotation="270 -10.0 0.0" scale="2.000 2.000 1.010">
+      <a-image src="#scan-vena-img" width="0.22" height="0.45" material="transparent:true; opacity:0.95; shader:flat; blending:additive;"></a-image>
+    </a-entity>
+
+    <a-entity id="vein-labels" visible="false" position="0 0 0.15" rotation="0 0 0">
+      <a-text value="Vena Cephalica-->" color="#00e8ff" position="-0.670 0.050 -0.319" scale="0.5 0.5 0.3" rotation="-90 0 0" align="center"></a-text>
+      <a-text value="<--Vena Basilica" color="#80d0ff" position="0.604 0.050 -0.100" scale="0.5 0.5 0.3" rotation="-90 0 0" align="center"></a-text>
+    </a-entity>
+  </a-entity>
+
+  <a-entity id="vein-finder-table" position="0.35 0.83 -1.1" rotation="0 120 0">
+    <a-gltf-model src="#vein-finder-model" scale="0.08 0.08 0.08" position="0 0.183 0"></a-gltf-model>
+  </a-entity>
+
+  <a-entity id="camera-rig" position="0 0 0.5">
+    <a-camera look-controls="enabled: true" wasd-controls="enabled: true; acceleration: 20" position="0 1.6 0">
+      
+      <a-entity id="vein-finder-fps" position="0 0 -0.6" rotation="0 90 0" visible="false">
+        <a-gltf-model src="#vein-finder-model" scale="0.05 0.05 0.05" position="0 0 0"></a-gltf-model>
+        
+        <a-entity id="vein-projection" visible="false">
+
+        </a-entity>
+      </a-entity>
+
+    </a-camera>
+  </a-entity>
+</a-scene>
+
+<div id="start-screen">
+  <div class="logo-label">Healthcare Simulation Platform</div>
+  <h1>Vein<span>Sim</span> VR</h1>
+  <p class="sub">Guided Vein Identification &amp; Vein Finder Training Simulator</p>
+  <button id="btn-start" onclick="startTraining()">START TRAINING</button>
+</div>
+
+<div id="hud">
+  <div id="medical-scan-zone" onmouseenter="startScan()" onmouseleave="pauseScan()"></div>
+
+  <div id="tutorial-panel">
+    <div class="step-badge" id="step-badge">STEP 1 OF 6</div>
+    <h2 id="step-title">Introduction to Vein Finder</h2>
+    <div class="content" id="step-content"></div>
+    <button id="btn-next" onclick="nextStep()">NEXT ›</button>
+    <button id="btn-action" onclick="grabDevice()">AMBIL ALAT</button>
+  </div>
+
+  <div id="flowchart-panel">
+    <div class="panel-title">Learning Flow</div>
+    <div><div class="flow-node" id="flow-0">Introduction</div></div>
+    <div class="flow-arrow" id="arr-0">↓</div>
+    <div><div class="flow-node" id="flow-1">Vein Anatomy</div></div>
+    <div class="flow-arrow" id="arr-1">↓</div>
+    <div><div class="flow-node" id="flow-2">Visualization</div></div>
+    <div class="flow-arrow" id="arr-2">↓</div>
+    <div><div class="flow-node" id="flow-3">Identification</div></div>
+    <div class="flow-arrow" id="arr-3">↓</div>
+    <div><div class="flow-node" id="flow-4">Vein Finder Demo</div></div>
+    <div class="flow-arrow" id="arr-4">↓</div>
+    <div><div class="flow-node" id="flow-5">Evaluation</div></div>
+  </div>
+
+  <div id="progress-panel">
+    <div class="panel-title">Progress</div>
+    <div id="progress-bar-outer"><div id="progress-bar-inner"></div></div>
+    <div id="progress-percent">0<span>%</span></div>
+  </div>
+
+  <div id="scan-overlay">
+    <div class="scan-label" id="scan-status-text">Scanning veins...</div>
+    <div class="scan-bar"><div class="scan-bar-fill" id="scan-fill"></div></div>
+  </div>
+
+  <div id="completion-screen">
+    <div class="check-ring">✓</div>
+    <h2>Training Completed!</h2>
+    <p>Selamat! Kamu telah menyelesaikan modul pelatihan simulasi alat Vein Finder medismu.</p>
+    <button id="btn-restart" onclick="restartTraining()">↺ &nbsp;Restart Training</button>
+  </div>
+</div>
+
+<script>
+const STEPS = [
+  {
+    title: "Pengenalan Vein Finder",
+    badge: "STEP 1 OF 6 — Pengenalan",
+    content: "<p>Vein Finder adalah perangkat medis non-invasif berbasis lampu Near-Infrared (NIR) untuk memetakan pembuluh darah secara real-time pada kulit.</p>",
+    scene: () => { resetDeviceState(); showVeins(false); showLabels(false); setStaticFinder(true); toggleActionBtn(false); toggleNextBtn(false); toggleScanZone(false); }
+  },
+  {
+    title: "Anatomi Vena",
+    badge: "STEP 2 OF 6 — Anatomi",
+    content: "<p>Vena superfisial pada lengan bawah dan tangan adalah lokasi utama penusukan jarum infus (Venipuncture). Periksa diagram anatomi di dinding kiri.</p>",
+    scene: () => { resetDeviceState(); showVeins(false); showLabels(false); setStaticFinder(true); toggleActionBtn(false); toggleNextBtn(false); toggleScanZone(false); }
+  },
+  {
+    title: "Visualisasi Lapisan Kulit",
+    badge: "STEP 3 OF 6 — Visualisasi",
+    content: "<p>Ketika hemoglobin darah menyerap cahaya inframerah, jaringan sekitarnya memantulkan balik sehingga kontras pembuluh darah muncul di permukaan kulit tangan.</p>",
+    scene: () => { resetDeviceState(); showVeins(true); showLabels(false); setStaticFinder(true); toggleActionBtn(false); toggleNextBtn(false); toggleScanZone(false); }
+  },
+  {
+    title: "Identifikasi Jalur Vena",
+    badge: "STEP 4 OF 6 — Identifikasi",
+    content: "<p>Pada simulasi ini akan ditampilkan dua vena superfisial utama, yaitu Vena Cephalica dan Vena Basilica. Vena Cephalica berada pada sisi ibu jari dan sering digunakan sebagai lokasi pemasangan infus karena mudah diakses. Sementara itu, Vena Basilica berada pada sisi jari kelingking dan menjadi alternatif akses intravena dengan ukuran pembuluh yang relatif besar..</p>",
+    scene: () => { showVeins(true); showLabels(true); setStaticFinder(true); toggleActionBtn(false); toggleNextBtn(false); toggleScanZone(false); }
+  },
+  {
+    title: "Demo Penggunaan Alat (Interactive Scan)",
+    badge: "STEP 5 OF 6 — Demo Perangkat",
+    content: "<p id='step5-instruction' style='color:#00c8ff; font-weight:600;'>Silakan klik tombol 'AMBIL ALAT' di bawah untuk memegang perangkat scanner medis.</p>",
+    scene: () => { 
+      showVeins(false); 
+      showLabels(false); 
+      if(!isScanCompleted) {
+        setStaticFinder(true);
+        toggleActionBtn(true); 
+        toggleNextBtn(true);   
+        toggleScanZone(false);
+      } else {
+        completeScan();
+      }
+    }
+  },
+  {
+    title: "Evaluasi Pelatihan",
+    badge: "STEP 6 OF 6 — Selesai",
+    content: "<p>Modul selesai. Kamu memahami prosedur kerja alat NIR Vein Finder secara klinis. Tekan tombol FINISH untuk mengakhirinya.</p>",
+    scene: () => { showVeins(true); showLabels(true); setStaticFinder(true); toggleActionBtn(false); toggleNextBtn(false); toggleScanZone(false); },
+    isLast: true
+  }
+];
+
+let currentStep = 0;
+let isHoldingDevice = false;
+let isScanning = false;
+let isScanCompleted = false;
+let scanProgress = 0;
+let scanInterval = null;
+
+window.addEventListener('mousemove', (e) => {
+  if (!isHoldingDevice) return;
+
+  const veinFinder = document.getElementById('vein-finder-fps');
+  if (!veinFinder) return;
+
+  const mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+  const mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+
+  const posX = mouseX * 0.45; 
+  const posY = mouseY * 0.35;
+
+  veinFinder.setAttribute('position', `${posX} ${posY} -0.6`);
+});
+
+function startTraining() {
+  document.getElementById('start-screen').style.display = 'none';
+  document.getElementById('hud').classList.add('active');
+  renderStep(0);
+}
+
+function renderStep(idx) {
+  currentStep = idx;
+  const s = STEPS[idx];
+  document.getElementById('step-badge').textContent = s.badge;
+  document.getElementById('step-title').textContent = s.title;
+  document.getElementById('step-content').innerHTML = s.content;
+  document.getElementById('btn-next').innerHTML = s.isLast ? '✓ FINISH' : 'NEXT ›';
+  
+  const pct = Math.round((idx / 5) * 100);
+  document.getElementById('progress-bar-outer').style.width = pct + '%';
+  document.getElementById('progress-percent').innerHTML = pct + '<span>%</span>';
+
+  for(let i=0; i<6; i++) {
+    let node = document.getElementById('flow-'+i);
+    if(node) node.className = 'flow-node' + (i === idx ? ' active' : i < idx ? ' done' : '');
+  }
+
+  if (s.scene) s.scene();
+}
+
+function nextStep() {
+  if (currentStep < STEPS.length - 1) {
+    renderStep(currentStep + 1); 
+  } else {
+    document.getElementById('tutorial-panel').style.display = 'none';
+    document.getElementById('completion-screen').classList.add('active');
+  }
+}
+
+function restartTraining() {
+  document.getElementById('completion-screen').classList.remove('active');
+  document.getElementById('tutorial-panel').style.display = '';
+  isScanCompleted = false;
+  resetDeviceState();
+  renderStep(0);
+}
+
+function grabDevice() {
+  isHoldingDevice = true;
+  setStaticFinder(false); 
+  setVis('#vein-finder-fps', true); 
+  setVis('#vein-projection', true); 
+  toggleActionBtn(false); 
+  toggleScanZone(true);
+
+  document.getElementById('step5-instruction').innerHTML = "Gunakan klik & tahan (drag) + gerakkan mouse untuk mengarahkan alat Vein Finder tepat masuk ke dalam lingkaran target merah.";
+}
+
+function resetDeviceState() {
+  isHoldingDevice = false;
+  isScanning = false;
+  scanProgress = 0;
+  if (scanInterval) clearInterval(scanInterval);
+  setVis('#vein-finder-fps', false);
+  setVis('#vein-projection', false);
+  toggleScanZone(false);
+}
+
+function startScan() {
+  if (!isHoldingDevice || isScanCompleted) return;
+  isScanning = true;
+  scanAnim(true);
+  document.getElementById('scan-status-text').textContent = "Scanning Veins (5 Detik Dimulai)...";
+
+  scanInterval = setInterval(() => {
+    scanProgress += 2;
+    document.getElementById('scan-fill').style.width = scanProgress + '%';
+
+    if (scanProgress >= 100) {
+      clearInterval(scanInterval);
+      completeScan();
+    }
+  }, 100);
+}
+
+function pauseScan() {
+  if (isScanCompleted || !isScanning) return;
+  isScanning = false;
+  scanAnim(false);
+  if (scanInterval) clearInterval(scanInterval);
+  document.getElementById('scan-status-text').textContent = "Scan Paused: Sorotan laser meleset dari target lingkaran merah!";
+}
+
+function completeScan() {
+  isScanning = false;
+  isScanCompleted = true;
+  scanAnim(false);
+  if (scanInterval) clearInterval(scanInterval);
+  
+  showVeins(true);
+  showLabels(true);
+
+  resetDeviceState();
+  setStaticFinder(true);
+
+  const instr = document.getElementById('step5-instruction');
+  if(instr) {
+    instr.innerHTML = "<span style='color:#00ff00; font-weight:700;'>✓ Veins Detected Successfully<br>Confidence Score: 96%</span><br><br>Kalibrasi manual sukses selama 5 detik, alat otomatis dikembangkan ke meja. Silakan klik tombol NEXT.";
+  }
+  toggleNextBtn(false); 
+}
+
+function showVeins(v)  { setVis('#vein-overlay', v); }
+function showLabels(v) { setVis('#vein-labels', v); }
+function setStaticFinder(v) { setVis('#vein-finder-table', v); }
+function scanAnim(v)   { document.getElementById('scan-overlay').classList.toggle('active', v); }
+function setVis(sel, v){ const el = document.querySelector(sel); if (el) el.setAttribute('visible', v); }
+function toggleNextBtn(disabled) { document.getElementById('btn-next').disabled = disabled; }
+function toggleActionBtn(visible) { document.getElementById('btn-action').classList.toggle('visible', visible); }
+function toggleScanZone(visible) { document.getElementById('medical-scan-zone').classList.toggle('active', visible); }
+</script>
+</body>
+</html>
